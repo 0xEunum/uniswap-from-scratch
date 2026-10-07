@@ -40,6 +40,11 @@ contract UniswapV1Exchange is ERC20 {
     error UniswapV1Exchange__ZeroReserves();
     error UniswapV1Exchange__ZeroOutputAmount();
     error UniswapV1Exchange__InsufficientOutputReserve();
+    error UniswapV1Exchange__EthSoldIsZero();
+    error UniswapV1Exchange__DeadlineExpired();
+    error UniswapV1Exchange__MinTokensIsZero();
+    error UniswapV1Exchange__InsufficientTokensBought();
+    error UniswapV1Exchange__TokensTransferFailed(address sender, address recipient, uint256 tokensBought);
 
     /*//////////////////////////////////////////////////////////////////////
                                 STATE VARIABLES
@@ -56,10 +61,18 @@ contract UniswapV1Exchange is ERC20 {
     /*//////////////////////////////////////////////////////////////////////
                                 EVENTS
     //////////////////////////////////////////////////////////////////////*/
+    event TokenPurchase(address indexed buyer, uint256 ethSold, uint256 tokensBought);
 
     /*//////////////////////////////////////////////////////////////////////
                                 MODIFIERS
     //////////////////////////////////////////////////////////////////////*/
+
+    modifier deadlineNotExpired(uint256 _deadline) {
+        if (_deadline < block.timestamp) {
+            revert UniswapV1Exchange__DeadlineExpired();
+        }
+        _;
+    }
 
     /*//////////////////////////////////////////////////////////////////////
                                 FUNCTIONS
@@ -102,6 +115,49 @@ contract UniswapV1Exchange is ERC20 {
     /*//////////////////////////////////////////////////////////////////////
                                 PRIVATE FUNCTIONS
     //////////////////////////////////////////////////////////////////////*/
+
+    /**
+     * @notice Executes an ETH to Token swap.
+     * @param _ethSold Amount of ETH sold.
+     * @param _minTokens Minimum amount of Tokens bought.
+     * @param _deadline Swap deadline timestamp.
+     * @param _buyer Address paying ETH.
+     * @param _recipient Address receiving Tokens.
+     * @return Amount of Tokens bought.
+     */
+    function _ethToTokenInput(
+        uint256 _ethSold,
+        uint256 _minTokens,
+        uint256 _deadline,
+        address _buyer,
+        address _recipient
+    ) private deadlineNotExpired(_deadline) returns (uint256) {
+        if (_ethSold == 0) {
+            revert UniswapV1Exchange__EthSoldIsZero();
+        }
+
+        if (_minTokens == 0) {
+            revert UniswapV1Exchange__MinTokensIsZero();
+        }
+
+        uint256 ethReserve = address(this).balance - _ethSold;
+        uint256 tokenReserve = I_TOKEN.balanceOf(address(this));
+
+        uint256 tokensBought = _getInputPrice(_ethSold, ethReserve, tokenReserve);
+
+        if (tokensBought < _minTokens) {
+            revert UniswapV1Exchange__InsufficientTokensBought();
+        }
+
+        emit TokenPurchase(_buyer, _ethSold, tokensBought);
+
+        bool success = I_TOKEN.transfer(_recipient, tokensBought);
+        if (!success) {
+            revert UniswapV1Exchange__TokensTransferFailed(address(this), _recipient, tokensBought);
+        }
+
+        return tokensBought;
+    }
 
     /*//////////////////////////////////////////////////////////////////////
                     INTERNAL & PRIVATE VIEW & PURE FUNCTIONS
@@ -171,4 +227,20 @@ contract UniswapV1Exchange is ERC20 {
     /*//////////////////////////////////////////////////////////////////////
                     EXTERNAL & PUBLIC VIEW & PURE FUNCTIONS
     //////////////////////////////////////////////////////////////////////*/
+
+    /**
+     * @notice Returns how many tokens are bought for an exact ETH amount.
+     * @param _ethSold Amount of ETH sold.
+     * @return Amount of tokens bought.
+     */
+    function getEthToTokenInputPrice(uint256 _ethSold) external view returns (uint256) {
+        if (_ethSold == 0) {
+            revert UniswapV1Exchange__EthSoldIsZero();
+        }
+
+        uint256 ethReserves = address(this).balance;
+        uint256 tokenReserves = I_TOKEN.balanceOf(address(this));
+
+        return _getInputPrice(_ethSold, ethReserves, tokenReserves);
+    }
 }
