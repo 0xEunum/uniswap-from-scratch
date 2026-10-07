@@ -36,12 +36,22 @@ contract UniswapV1Exchange is ERC20 {
     //////////////////////////////////////////////////////////////////////*/
     error UniswapV1Exchange__ZeroAddress();
     error UniswapV1Exchange__EmptyTokenNameOrSymbol();
+    error UniswapV1Exchange__ZeroInputAmount();
+    error UniswapV1Exchange__ZeroReserves();
+    error UniswapV1Exchange__ZeroOutputAmount();
+    error UniswapV1Exchange__InsufficientOutputReserve();
 
     /*//////////////////////////////////////////////////////////////////////
                                 STATE VARIABLES
     //////////////////////////////////////////////////////////////////////*/
     IERC20 public immutable I_TOKEN;
     address public immutable I_FACTORY;
+
+    /// @notice The multiplier representing (1000 - 3) = 997, accounting for the 0.3% trading fee.
+    uint256 private constant FEE_MULTIPLIER = 997;
+
+    /// @notice The fee denominator representing 1000 (100%).
+    uint256 private constant FEE_DENOMINATOR = 1000;
 
     /*//////////////////////////////////////////////////////////////////////
                                 EVENTS
@@ -54,6 +64,14 @@ contract UniswapV1Exchange is ERC20 {
     /*//////////////////////////////////////////////////////////////////////
                                 FUNCTIONS
     //////////////////////////////////////////////////////////////////////*/
+
+    /**
+     * @notice Initializes the exchange with paired ERC20 token, factory address, and LP token metadata.
+     * @param _token The address of the ERC20 token traded on this exchange.
+     * @param _factory The address of Uniswap V1 factory.
+     * @param _lpTokenName The human-readable name of the Liquidity pool token.
+     * @param _lpTokenSymbol The symbol of the Liquidity pool token.
+     */
     constructor(address _token, address _factory, string memory _lpTokenName, string memory _lpTokenSymbol)
         ERC20(_lpTokenName, _lpTokenSymbol)
     {
@@ -68,4 +86,89 @@ contract UniswapV1Exchange is ERC20 {
         I_TOKEN = IERC20(_token);
         I_FACTORY = _factory;
     }
+
+    /*//////////////////////////////////////////////////////////////////////
+                                EXTERNAL FUNCTIONS
+    //////////////////////////////////////////////////////////////////////*/
+
+    /*//////////////////////////////////////////////////////////////////////
+                                PUBLIC FUNCTIONS
+    //////////////////////////////////////////////////////////////////////*/
+
+    /*//////////////////////////////////////////////////////////////////////
+                                INTERNAL FUNCTIONS
+    //////////////////////////////////////////////////////////////////////*/
+
+    /*//////////////////////////////////////////////////////////////////////
+                                PRIVATE FUNCTIONS
+    //////////////////////////////////////////////////////////////////////*/
+
+    /*//////////////////////////////////////////////////////////////////////
+                    INTERNAL & PRIVATE VIEW & PURE FUNCTIONS
+    //////////////////////////////////////////////////////////////////////*/
+
+    /**
+     * @notice Calculates output amount received given an exact input amount sold.
+     * @dev Follows constant product formula (x + Δx * 0.997)(y - Δy) = xy.
+     *      Solving for Δy gives Δy = (Δx * 997 * y) / (x * 1000 + Δx * 997).
+     * @param _inputAmount Amount of input asset being sold.
+     * @param _inputReserve Current reserve of the input asset in the pool.
+     * @param _outputReserve Current reserve of the output asset in the pool.
+     * @return outputAmount Amount of output asset bought.
+     */
+    function _getInputPrice(uint256 _inputAmount, uint256 _inputReserve, uint256 _outputReserve)
+        private
+        pure
+        returns (uint256 outputAmount)
+    {
+        if (_inputAmount == 0) {
+            revert UniswapV1Exchange__ZeroInputAmount();
+        }
+
+        if (_inputReserve == 0 || _outputReserve == 0) {
+            revert UniswapV1Exchange__ZeroReserves();
+        }
+
+        uint256 inputAmountWithFee = _inputAmount * FEE_MULTIPLIER;
+        uint256 numerator = inputAmountWithFee * _outputReserve;
+        uint256 denominator = (_inputReserve * FEE_DENOMINATOR) + inputAmountWithFee;
+        return numerator / denominator;
+    }
+
+    /**
+     * @notice Calculates required input amount to sell given an exact output amount bought.
+     * @dev Follows constant product formula (x + Δx * 0.997)(y - Δy) = xy.
+     *      Solving for Δx gives Δx = (x * Δy * 1000) / ((y - Δy) * 997).
+     *      Adds 1 to round up in favor of the pool, preventing integer truncation loss.
+     * @param _outputAmount Desired amount of output asset being bought.
+     * @param _inputReserve Current reserve of the input asset in the pool.
+     * @param _outputReserve Current reserve of the output asset in the pool.
+     * @return inputAmount Amount of input asset required to be sold.
+     */
+    function _getOutputPrice(uint256 _outputAmount, uint256 _inputReserve, uint256 _outputReserve)
+        private
+        pure
+        returns (uint256 inputAmount)
+    {
+        if (_outputAmount == 0) {
+            revert UniswapV1Exchange__ZeroOutputAmount();
+        }
+
+        if (_inputReserve == 0 || _outputReserve == 0) {
+            revert UniswapV1Exchange__ZeroReserves();
+        }
+
+        if (_outputAmount >= _outputReserve) {
+            revert UniswapV1Exchange__InsufficientOutputReserve();
+        }
+
+        uint256 numerator = _inputReserve * _outputAmount * FEE_DENOMINATOR;
+        uint256 denominator = (_outputReserve - _outputAmount) * FEE_MULTIPLIER;
+
+        return (numerator / denominator) + 1;
+    }
+
+    /*//////////////////////////////////////////////////////////////////////
+                    EXTERNAL & PUBLIC VIEW & PURE FUNCTIONS
+    //////////////////////////////////////////////////////////////////////*/
 }
