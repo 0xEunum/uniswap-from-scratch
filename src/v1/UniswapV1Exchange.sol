@@ -45,6 +45,7 @@ contract UniswapV1Exchange is ERC20 {
     error UniswapV1Exchange__MinTokensIsZero();
     error UniswapV1Exchange__InsufficientTokensBought();
     error UniswapV1Exchange__TokensTransferFailed(address sender, address recipient, uint256 tokensBought);
+    error UniswapV1Exchange__InvalidRecipient();
 
     /*//////////////////////////////////////////////////////////////////////
                                 STATE VARIABLES
@@ -70,6 +71,15 @@ contract UniswapV1Exchange is ERC20 {
     modifier deadlineNotExpired(uint256 _deadline) {
         if (_deadline < block.timestamp) {
             revert UniswapV1Exchange__DeadlineExpired();
+        }
+        _;
+    }
+
+    /// @notice Validates that the recipient is neither address(0) nor this exchange contract.
+    /// @param _recipient The address to validate.
+    modifier validRecipient(address _recipient) {
+        if (_recipient == address(0) || _recipient == address(this)) {
+            revert UniswapV1Exchange__InvalidRecipient();
         }
         _;
     }
@@ -104,9 +114,39 @@ contract UniswapV1Exchange is ERC20 {
                                 EXTERNAL FUNCTIONS
     //////////////////////////////////////////////////////////////////////*/
 
+    /**
+     * @notice Swaps ETH for tokens and transfers them to msg.sender.
+     * @param _minTokens Minimum amount of tokens caller expects to receive (slippage protection).
+     * @param _deadline Timestamp after which transaction reverts.
+     * @return tokensBought The amount of tokens purchased and transferred to msg.sender.
+     */
+    function ethToTokenSwapInput(uint256 _minTokens, uint256 _deadline)
+        external
+        payable
+        returns (uint256 tokensBought)
+    {
+        return _ethToTokenInput(msg.value, _minTokens, _deadline, msg.sender, msg.sender);
+    }
+
     /*//////////////////////////////////////////////////////////////////////
                                 PUBLIC FUNCTIONS
     //////////////////////////////////////////////////////////////////////*/
+
+    /**
+     * @notice Swaps ETH for tokens and transfers them to a specified recipient.
+     * @param _minTokens Minimum amount of tokens recipient must receive (slippage protection).
+     * @param _deadline Timestamp after which transaction reverts.
+     * @param _recipient The address receiving the purchased tokens.
+     * @return tokensBought The amount of tokens purchased and transferred to recipient.
+     */
+    function ethToTokenTransferInput(uint256 _minTokens, uint256 _deadline, address _recipient)
+        public
+        payable
+        validRecipient(_recipient)
+        returns (uint256 tokensBought)
+    {
+        return _ethToTokenInput(msg.value, _minTokens, _deadline, msg.sender, _recipient);
+    }
 
     /*//////////////////////////////////////////////////////////////////////
                                 INTERNAL FUNCTIONS
@@ -150,7 +190,6 @@ contract UniswapV1Exchange is ERC20 {
         }
 
         emit TokenPurchase(_buyer, _ethSold, tokensBought);
-
         bool success = I_TOKEN.transfer(_recipient, tokensBought);
         if (!success) {
             revert UniswapV1Exchange__TokensTransferFailed(address(this), _recipient, tokensBought);
