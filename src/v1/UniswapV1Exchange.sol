@@ -267,6 +267,22 @@ contract UniswapV1Exchange is ERC20 {
                     EXTERNAL & PUBLIC VIEW & PURE FUNCTIONS
     //////////////////////////////////////////////////////////////////////*/
 
+    function getInputPrice(uint256 _inputAmount, uint256 _inputReserve, uint256 _outputReverse)
+        external
+        pure
+        returns (uint256)
+    {
+        return _getInputPrice(_inputAmount, _inputReserve, _outputReverse);
+    }
+
+    function getOutputPrice(uint256 _outputAmount, uint256 _inputReserve, uint256 _outputReserve)
+        external
+        pure
+        returns (uint256)
+    {
+        return _getOutputPrice(_outputAmount, _inputReserve, _outputReserve);
+    }
+
     /**
      * @notice Returns how many tokens are bought for an exact ETH amount.
      * @param _ethSold Amount of ETH sold.

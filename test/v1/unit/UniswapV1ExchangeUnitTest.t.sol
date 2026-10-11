@@ -11,6 +11,12 @@ contract UniswapV1ExchangeUnitTest is Test {
     UniswapV1Factory factory;
     ERC20Mock token;
 
+    /// @notice The multiplier representing (1000 - 3) = 997, accounting for the 0.3% trading fee.
+    uint256 public constant FEE_MULTIPLIER = 997;
+
+    /// @notice The fee denominator representing 1000 (100%).
+    uint256 public constant FEE_DENOMINATOR = 1000;
+
     address OWNER = makeAddr("OWNER");
     address USER = makeAddr("USER");
     address USER2 = makeAddr("USER2");
