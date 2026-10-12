@@ -133,4 +133,78 @@ contract EthToTokenSwapUnitTest is UniswapV1ExchangeUnitTest {
         );
         exchange.ethToTokenSwapInput{value: ethSold}(1, block.timestamp);
     }
+
+    function test_EthToTokenSwapInputEmitsEvent() public addFakeLiquidity(10 ether, 1_000 ether) {
+        uint256 ethSold = 1 ether;
+        uint256 tokensBought = exchange.getEthToTokenInputPrice(ethSold);
+
+        deal(USER, ethSold);
+
+        vm.expectEmit(true, false, false, true, address(exchange));
+        emit UniswapV1Exchange.TokenPurchase(USER, ethSold, tokensBought);
+
+        vm.prank(USER);
+        exchange.ethToTokenSwapInput{value: ethSold}(1, block.timestamp);
+    }
+
+    function test_EthToTokenSwapInputRevertsWhenReservesAreZero() public {
+        uint256 ethSold = 1 ether;
+        deal(USER, ethSold);
+
+        vm.prank(USER);
+        vm.expectRevert(UniswapV1Exchange.UniswapV1Exchange__ZeroReserves.selector);
+        exchange.ethToTokenSwapInput{value: ethSold}(1, block.timestamp);
+    }
+
+    // ethToTokenTransferInput
+    function test_EthToTokenTransferInput() public addFakeLiquidity(10 ether, 1_000 ether) {
+        uint256 ethSold = 1 ether;
+        uint256 ethReserve = 10 ether;
+        uint256 tokenReserve = 1_000 ether;
+
+        uint256 expectedTokensBought = exchange.getEthToTokenInputPrice(ethSold);
+
+        deal(USER, ethSold);
+
+        vm.prank(USER);
+        uint256 actualTokensBought = exchange.ethToTokenTransferInput{value: ethSold}(1, block.timestamp, USER2);
+
+        assertEq(expectedTokensBought, actualTokensBought);
+        assertEq(USER.balance, 0);
+        assertEq(address(exchange).balance, ethReserve + ethSold);
+        assertEq(token.balanceOf(USER), 0);
+        assertEq(token.balanceOf(USER2), actualTokensBought);
+        assertEq(token.balanceOf(address(exchange)), tokenReserve - actualTokensBought);
+    }
+
+    function test_EthToTokenTransferInputEmitsEvent() public addFakeLiquidity(10 ether, 1_000 ether) {
+        uint256 ethSold = 1 ether;
+        uint256 tokensBought = exchange.getEthToTokenInputPrice(ethSold);
+
+        deal(USER, ethSold);
+
+        vm.expectEmit(true, false, false, true, address(exchange));
+        emit UniswapV1Exchange.TokenPurchase(USER, ethSold, tokensBought);
+
+        vm.prank(USER);
+        exchange.ethToTokenTransferInput{value: ethSold}(1, block.timestamp, USER2);
+    }
+
+    function test_EthToTokenTransferInputRevertsWhenRecipientIsZeroAddress() public {
+        uint256 ethSold = 1 ether;
+        deal(USER, ethSold);
+
+        vm.prank(USER);
+        vm.expectRevert(UniswapV1Exchange.UniswapV1Exchange__InvalidRecipient.selector);
+        exchange.ethToTokenTransferInput{value: ethSold}(1, block.timestamp, address(0));
+    }
+
+    function test_EthToTokenTransferInputRevertsWhenRecipientIsExchange() public {
+        uint256 ethSold = 1 ether;
+        deal(USER, ethSold);
+
+        vm.prank(USER);
+        vm.expectRevert(UniswapV1Exchange.UniswapV1Exchange__InvalidRecipient.selector);
+        exchange.ethToTokenTransferInput{value: ethSold}(1, block.timestamp, address(exchange));
+    }
 }
