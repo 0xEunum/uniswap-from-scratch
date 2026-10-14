@@ -50,20 +50,23 @@ contract UniswapV1ExchangeUnitTest is Test {
         assertEq(exchange.symbol(), expectedTokenSymbol);
     }
 
-    function test_constructorArgumentsErrorsReverts() external {
-        string memory tokenName = token.name();
-        string memory tokenSymbol = token.symbol();
-
+    function test_ConstructorRevertsWhenTokenIsZeroAddress() external {
         vm.expectRevert(UniswapV1Exchange.UniswapV1Exchange__ZeroAddress.selector);
-        new UniswapV1Exchange(address(0), address(factory), tokenName, tokenSymbol);
+        new UniswapV1Exchange(address(0), address(factory), "LP Token", "LP");
+    }
 
+    function test_ConstructorRevertsWhenFactoryIsZeroAddress() external {
         vm.expectRevert(UniswapV1Exchange.UniswapV1Exchange__ZeroAddress.selector);
-        new UniswapV1Exchange(address(token), address(0), tokenName, tokenSymbol);
+        new UniswapV1Exchange(address(token), address(0), "LP Token", "LP");
+    }
 
+    function test_ConstructorRevertsWhenLpTokenNameIsEmpty() external {
         vm.expectRevert(UniswapV1Exchange.UniswapV1Exchange__EmptyTokenNameOrSymbol.selector);
-        new UniswapV1Exchange(address(token), address(factory), "", tokenSymbol);
+        new UniswapV1Exchange(address(token), address(factory), "", "LP");
+    }
 
+    function test_ConstructorRevertsWhenLpTokenSymbolIsEmpty() external {
         vm.expectRevert(UniswapV1Exchange.UniswapV1Exchange__EmptyTokenNameOrSymbol.selector);
-        new UniswapV1Exchange(address(token), address(factory), tokenName, "");
+        new UniswapV1Exchange(address(token), address(factory), "LP Token", "");
     }
 }
