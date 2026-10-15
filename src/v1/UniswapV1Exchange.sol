@@ -50,6 +50,11 @@ contract UniswapV1Exchange is ERC20 {
     error UniswapV1Exchange__MaxEthIsZero();
     error UniswapV1Exchange__EthSoldExceedsMaxEth();
     error UniswapV1Exchange__EthTransferFailed(address buyer, uint256 amount);
+    error UniswapV1Exchange__MaxTokensIsZero();
+    error UniswapV1Exchange__InsufficientEthAmount();
+    error UniswapV1Exchange__MinLiquidityIsZero();
+    error UniswapV1Exchange__MaxTokensExceeded();
+    error UniswapV1Exchange__InsufficientLiquidityMinted();
 
     /*//////////////////////////////////////////////////////////////////////
                                 STATE VARIABLES
@@ -67,6 +72,7 @@ contract UniswapV1Exchange is ERC20 {
                                 EVENTS
     //////////////////////////////////////////////////////////////////////*/
     event TokenPurchase(address indexed buyer, uint256 ethSold, uint256 tokensBought);
+    event AddLiquidity(address indexed provider, uint256 ethAmount, uint256 tokenAmount);
 
     /*//////////////////////////////////////////////////////////////////////
                                 MODIFIERS
@@ -119,6 +125,81 @@ contract UniswapV1Exchange is ERC20 {
     /*//////////////////////////////////////////////////////////////////////
                                 EXTERNAL FUNCTIONS
     //////////////////////////////////////////////////////////////////////*/
+
+    /**
+     * @notice Deposits ETH and tokens into the exchange pool and mints LP tokens to msg.sender.
+     * @dev If liquidity already exists, deposited tokens must match the current pool price ratio.
+     *      If this is the initial deposit, `_maxTokens` determines the initial token reserve.
+     * @param _minLiquidity Minimum amount of LP tokens caller expects to receive (slippage check).
+     * @param _maxTokens Maximum amount of tokens caller is willing to deposit.
+     * @param _deadline Timestamp after which transaction reverts.
+     * @return liquidityMinted Amount of LP tokens minted to caller.
+     */
+    function addLiquidity(uint256 _minLiquidity, uint256 _maxTokens, uint256 _deadline)
+        external
+        payable
+        deadlineNotExpired(_deadline)
+        returns (uint256)
+    {
+        if (_maxTokens == 0) {
+            revert UniswapV1Exchange__MaxTokensIsZero();
+        }
+
+        if (msg.value == 0) {
+            revert UniswapV1Exchange__InsufficientEthAmount();
+        }
+
+        uint256 totalLiquidity = totalSupply();
+
+        if (totalLiquidity > 0) {
+            if (_minLiquidity == 0) {
+                revert UniswapV1Exchange__MinLiquidityIsZero();
+            }
+
+            uint256 ethReserve = address(this).balance - msg.value;
+            uint256 tokenReserve = I_TOKEN.balanceOf(address(this));
+
+            uint256 tokenAmount = msg.value * tokenReserve / ethReserve + 1;
+
+            uint256 liquidityMinted = msg.value * totalLiquidity / ethReserve;
+
+            if (_maxTokens < tokenAmount) {
+                revert UniswapV1Exchange__MaxTokensExceeded();
+            }
+
+            if (liquidityMinted < _minLiquidity) {
+                revert UniswapV1Exchange__InsufficientLiquidityMinted();
+            }
+
+            _mint(msg.sender, liquidityMinted);
+
+            bool success = I_TOKEN.transferFrom(msg.sender, address(this), tokenAmount);
+            if (!success) {
+                revert UniswapV1Exchange__TokensTransferFailed(msg.sender, address(this), tokenAmount);
+            }
+
+            emit AddLiquidity(msg.sender, msg.value, tokenAmount);
+
+            return liquidityMinted;
+        } else {
+            if (msg.value < 1_000_000_000) {
+                revert UniswapV1Exchange__InsufficientEthAmount();
+            }
+            uint256 tokenAmount = _maxTokens;
+            uint256 initialLiquidity = address(this).balance;
+
+            _mint(msg.sender, initialLiquidity);
+
+            bool success = I_TOKEN.transferFrom(msg.sender, address(this), tokenAmount);
+            if (!success) {
+                revert UniswapV1Exchange__TokensTransferFailed(msg.sender, address(this), tokenAmount);
+            }
+
+            emit AddLiquidity(msg.sender, msg.value, tokenAmount);
+
+            return initialLiquidity;
+        }
+    }
 
     /**
      * @notice Swaps ETH for tokens and transfers them to msg.sender.
