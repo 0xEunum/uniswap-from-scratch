@@ -270,15 +270,169 @@ contract LiquidityProvidingUnitTest is UniswapV1ExchangeUnitTest {
     }
 
     function test_LpTokenTransferRevertsIfAmountExceedsBalance() public addInitialLiquidity(0, 10 ether, 1_000 ether) {
-        uint256 userLiquidity = exchange.balanceOf(USER);
+        uint256 USERLiquidity = exchange.balanceOf(USER);
 
         vm.startPrank(USER);
         vm.expectRevert(
             abi.encodeWithSelector(
-                IERC20Errors.ERC20InsufficientBalance.selector, USER, userLiquidity, userLiquidity + 1
+                IERC20Errors.ERC20InsufficientBalance.selector, USER, USERLiquidity, USERLiquidity + 1
             )
         );
-        exchange.transfer(USER2, userLiquidity + 1);
+        exchange.transfer(USER2, USERLiquidity + 1);
         vm.stopPrank();
+    }
+
+    // removeLiquidity
+    function test_RemoveLiquidity() public addInitialLiquidity(0, 10 ether, 20_000 ether) {
+        uint256 initialEthReserve = 10 ether;
+        uint256 initialTokenReserve = 20_000 ether;
+
+        uint256 liquidityToBurn = 1 ether; // 10% off the total pool reserve.
+
+        uint256 expectedEthAmount = 1 ether;
+        uint256 expectedTokenAmount = 2000 ether;
+
+        uint256 USEREthBefore = USER.balance;
+        uint256 USERTokenBefore = token.balanceOf(USER);
+
+        vm.prank(USER);
+        (uint256 ethAmount, uint256 tokenAmount) =
+            exchange.removeLiquidity(liquidityToBurn, expectedEthAmount, expectedTokenAmount, block.timestamp);
+
+        assertEq(ethAmount, expectedEthAmount);
+        assertEq(tokenAmount, expectedTokenAmount);
+
+        assertEq(USER.balance, USEREthBefore + ethAmount);
+        assertEq(token.balanceOf(USER), USERTokenBefore + tokenAmount);
+
+        assertEq(address(exchange).balance, initialEthReserve - ethAmount);
+        assertEq(token.balanceOf(address(exchange)), initialTokenReserve - tokenAmount);
+
+        assertEq(exchange.balanceOf(USER), 9 ether);
+        assertEq(exchange.totalSupply(), 9 ether);
+    }
+
+    function test_RemoveLiquidityRevertsIfAmountIsZero() external addInitialLiquidity(0, 10 ether, 20_000 ether) {
+        vm.startPrank(USER);
+        vm.expectRevert(UniswapV1Exchange.UniswapV1Exchange__AmountIsZero.selector);
+        exchange.removeLiquidity(0, 1, 1, block.timestamp);
+        vm.stopPrank();
+    }
+
+    function test_RemoveLiquidityRevertsIfDeadlineExpired() external addInitialLiquidity(0, 10 ether, 20_000 ether) {
+        vm.startPrank(USER);
+        vm.expectRevert(UniswapV1Exchange.UniswapV1Exchange__DeadlineExpired.selector);
+        exchange.removeLiquidity(1 ether, 1, 1, block.timestamp - 1);
+        vm.stopPrank();
+    }
+
+    function test_RemoveLiquidityRevertsIfMinEthIsZero() external addInitialLiquidity(0, 10 ether, 20_000 ether) {
+        vm.startPrank(USER);
+        vm.expectRevert(UniswapV1Exchange.UniswapV1Exchange__MinEthIsZero.selector);
+        exchange.removeLiquidity(1 ether, 0, 1, block.timestamp);
+        vm.stopPrank();
+    }
+
+    function test_RemoveLiquidityRevertsIfMinTokensIsZero() external addInitialLiquidity(0, 10 ether, 20_000 ether) {
+        vm.startPrank(USER);
+        vm.expectRevert(UniswapV1Exchange.UniswapV1Exchange__MinTokensIsZero.selector);
+        exchange.removeLiquidity(1 ether, 1, 0, block.timestamp);
+        vm.stopPrank();
+    }
+
+    function test_RemoveLiquidityRevertsIfInsufficientEthWithdrawn()
+        external
+        addInitialLiquidity(0, 10 ether, 20_000 ether)
+    {
+        vm.startPrank(USER);
+        vm.expectRevert(UniswapV1Exchange.UniswapV1Exchange__InsufficientEthWithdrawn.selector);
+        exchange.removeLiquidity(1 ether, 1 ether + 1, 1, block.timestamp);
+        vm.stopPrank();
+    }
+
+    function test_RemoveLiquidityRevertsIfInsufficientTokensWithdrawn()
+        external
+        addInitialLiquidity(0, 10 ether, 20_000 ether)
+    {
+        vm.startPrank(USER);
+        vm.expectRevert(UniswapV1Exchange.UniswapV1Exchange__InsufficientTokensWithdrawn.selector);
+        exchange.removeLiquidity(1 ether, 1, 2_000 ether + 1, block.timestamp);
+        vm.stopPrank();
+    }
+
+    function test_RemoveLiquidityRevertsIfUserHasInsufficientLpBalance()
+        external
+        addInitialLiquidity(0, 10 ether, 20_000 ether)
+    {
+        uint256 USERLiquidity = exchange.balanceOf(USER);
+
+        vm.startPrank(USER);
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                IERC20Errors.ERC20InsufficientBalance.selector, USER, USERLiquidity, USERLiquidity + 1
+            )
+        );
+        exchange.removeLiquidity(USERLiquidity + 1, 1, 1, block.timestamp);
+        vm.stopPrank();
+    }
+
+    function test_RemoveLiquidityRevertsIfTotalLiquidityIsZero() external {
+        vm.expectRevert(UniswapV1Exchange.UniswapV1Exchange__TotalLiquidityIsZero.selector);
+        exchange.removeLiquidity(1 ether, 1, 1, block.timestamp);
+    }
+
+    function test_RemoveLiquidityEmitsEvent() external addInitialLiquidity(0, 10 ether, 20_000 ether) {
+        uint256 liquidityToBurn = 1 ether;
+        uint256 expectedEthAmount = 1 ether;
+        uint256 expectedTokenAmount = 2_000 ether;
+
+        vm.expectEmit(true, false, false, true, address(exchange));
+        emit UniswapV1Exchange.RemoveLiquidity(USER, expectedEthAmount, expectedTokenAmount);
+
+        vm.prank(USER);
+        exchange.removeLiquidity(liquidityToBurn, expectedEthAmount, expectedTokenAmount, block.timestamp);
+    }
+
+    function test_RemoveLiquidityRevertsIfTokenTransferFails() external addInitialLiquidity(0, 10 ether, 20_000 ether) {
+        uint256 liquidityToBurn = 1 ether;
+        uint256 expectedTokenAmount = 2_000 ether;
+
+        vm.mockCall(
+            address(token),
+            abi.encodeWithSelector(token.transfer.selector, USER, expectedTokenAmount),
+            abi.encode(false)
+        );
+
+        vm.prank(USER);
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                UniswapV1Exchange.UniswapV1Exchange__TokensTransferFailed.selector,
+                address(exchange),
+                USER,
+                expectedTokenAmount
+            )
+        );
+        exchange.removeLiquidity(liquidityToBurn, 1, 1, block.timestamp);
+    }
+
+    function test_RemoveLiquidityRevertsIfEthTransferFails() external addInitialLiquidity(0, 10 ether, 20_000 ether) {
+        RejectRemoveLiquidityEther rejecter = new RejectRemoveLiquidityEther();
+
+        vm.prank(USER);
+        exchange.transfer(address(rejecter), 1 ether);
+
+        uint256 expectedEthAmount = 1 ether;
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                UniswapV1Exchange.UniswapV1Exchange__EthTransferFailed.selector, address(rejecter), expectedEthAmount
+            )
+        );
+        rejecter.remove(exchange, 1 ether);
+    }
+}
+
+contract RejectRemoveLiquidityEther {
+    function remove(UniswapV1Exchange _exchange, uint256 _amount) external {
+        _exchange.removeLiquidity(_amount, 1, 1, block.timestamp);
     }
 }
