@@ -60,6 +60,8 @@ contract UniswapV1Exchange is ERC20 {
     error UniswapV1Exchange__TotalLiquidityIsZero();
     error UniswapV1Exchange__InsufficientEthWithdrawn();
     error UniswapV1Exchange__InsufficientTokensWithdrawn();
+    error UniswapV1Exchange__TokensSoldIsZero();
+    error UniswapV1Exchange__EthBoughtExceedsMinEth();
 
     /*//////////////////////////////////////////////////////////////////////
                                 STATE VARIABLES
@@ -79,6 +81,7 @@ contract UniswapV1Exchange is ERC20 {
     event TokenPurchase(address indexed buyer, uint256 ethSold, uint256 tokensBought);
     event AddLiquidity(address indexed provider, uint256 ethAmount, uint256 tokenAmount);
     event RemoveLiquidity(address indexed provider, uint256 ethAmount, uint256 tokenAmount);
+    event EthPurchase(address indexed buyer, uint256 tokensSold, uint256 ethBought);
 
     /*//////////////////////////////////////////////////////////////////////
                                 MODIFIERS
@@ -295,6 +298,20 @@ contract UniswapV1Exchange is ERC20 {
         return _ethToTokenOutput(_tokensBought, msg.value, _deadline, msg.sender, msg.sender);
     }
 
+    /**
+     * @notice Swaps an exact amount of tokens for ETH and transfers ETH to msg.sender.
+     * @param _tokensSold Amount of tokens sold by the caller.
+     * @param _minEth Minimum amount of ETH caller expects to receive (slippage protection).
+     * @param _deadline Timestamp after which transaction reverts.
+     * @return ethBought The amount of ETH bought and transferred to msg.sender.
+     */
+    function tokenToEthSwapInput(uint256 _tokensSold, uint256 _minEth, uint256 _deadline)
+        external
+        returns (uint256 ethBought)
+    {
+        return _tokenToEthInput(_tokensSold, _minEth, _deadline, msg.sender, msg.sender);
+    }
+
     /*//////////////////////////////////////////////////////////////////////
                                 PUBLIC FUNCTIONS
     //////////////////////////////////////////////////////////////////////*/
@@ -329,6 +346,22 @@ contract UniswapV1Exchange is ERC20 {
         returns (uint256 ethSold)
     {
         return _ethToTokenOutput(_tokensBought, msg.value, _deadline, msg.sender, _recipient);
+    }
+
+    /**
+     * @notice Swaps an exact amount of tokens for ETH and sends ETH to a specified recipient.
+     * @param _tokensSold Amount of tokens sold by the caller.
+     * @param _minEth Minimum amount of ETH recipient must receive (slippage protection).
+     * @param _deadline Timestamp after which transaction reverts.
+     * @param _recipient The address receiving the purchased ETH.
+     * @return ethBought The amount of ETH bought and transferred to recipient.
+     */
+    function tokenToEthTransferInput(uint256 _tokensSold, uint256 _minEth, uint256 _deadline, address _recipient)
+        public
+        validRecipient(_recipient)
+        returns (uint256 ethBought)
+    {
+        return _tokenToEthInput(_tokensSold, _minEth, _deadline, msg.sender, _recipient);
     }
 
     /*//////////////////////////////////////////////////////////////////////
@@ -432,6 +465,55 @@ contract UniswapV1Exchange is ERC20 {
         emit TokenPurchase(_buyer, ethSold, _tokensBought);
 
         return ethSold;
+    }
+
+    /**
+     * @notice Swaps an exact amount of tokens for ETH.
+     * @dev Calculates ETH output using constant product formula, transfers ETH to recipient,
+     *      and transfers tokens from buyer to exchange.
+     * @param _tokensSold Amount of tokens sold by the buyer.
+     * @param _minEth Minimum amount of ETH recipient must receive (slippage protection).
+     * @param _deadline Timestamp after which transaction reverts.
+     * @param _buyer Address providing the tokens.
+     * @param _recipient Address receiving the purchased ETH.
+     * @return ethBought The amount of ETH bought and transferred to recipient.
+     */
+    function _tokenToEthInput(
+        uint256 _tokensSold,
+        uint256 _minEth,
+        uint256 _deadline,
+        address _buyer,
+        address _recipient
+    ) private deadlineNotExpired(_deadline) returns (uint256 ethBought) {
+        if (_tokensSold == 0) {
+            revert UniswapV1Exchange__TokensSoldIsZero();
+        }
+
+        if (_minEth == 0) {
+            revert UniswapV1Exchange__MinEthIsZero();
+        }
+
+        uint256 ethReserve = address(this).balance;
+        uint256 tokenReserve = I_TOKEN.balanceOf(address(this));
+
+        ethBought = _getInputPrice(_tokensSold, tokenReserve, ethReserve);
+
+        if (_minEth > ethBought) {
+            revert UniswapV1Exchange__EthBoughtExceedsMinEth();
+        }
+
+        (bool ethSent,) = _recipient.call{value: ethBought}("");
+        if (!ethSent) {
+            revert UniswapV1Exchange__EthTransferFailed(_recipient, ethBought);
+        }
+
+        bool tokenSent = I_TOKEN.transferFrom(_buyer, address(this), _tokensSold);
+        if (!tokenSent) {
+            revert UniswapV1Exchange__TokensTransferFailed(_buyer, address(this), _tokensSold);
+        }
+
+        emit EthPurchase(_buyer, _tokensSold, ethBought);
+        return ethBought;
     }
 
     /*//////////////////////////////////////////////////////////////////////
@@ -563,5 +645,21 @@ contract UniswapV1Exchange is ERC20 {
         uint256 tokenReserves = I_TOKEN.balanceOf(address(this));
 
         return _getOutputPrice(_tokensBought, ethReserve, tokenReserves);
+    }
+
+    /**
+     * @notice Returns how much ETH can be bought with an exact token amount.
+     * @param _tokensSold Amount of tokens sold.
+     * @return ethBought Amount of ETH bought.
+     */
+    function getTokenToEthInputPrice(uint256 _tokensSold) external view returns (uint256 ethBought) {
+        if (_tokensSold == 0) {
+            revert UniswapV1Exchange__TokensSoldIsZero();
+        }
+
+        uint256 tokenReserve = I_TOKEN.balanceOf(address(this));
+        uint256 ethReserve = address(this).balance;
+
+        return _getInputPrice(_tokensSold, tokenReserve, ethReserve);
     }
 }
