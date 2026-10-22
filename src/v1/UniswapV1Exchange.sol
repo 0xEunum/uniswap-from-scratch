@@ -25,6 +25,10 @@ pragma solidity ^0.8.30;
 
 import {ERC20, IERC20} from "@openzeppelin/contracts/token/ERC20/ERC20.sol";
 
+interface IUniswapV1Factory {
+    function getExchangeAddr(address _token) external view returns (address);
+}
+
 /**
  * @title UniswapV1Exchange
  * @notice An automated market maker (AMM) exchange contract for a single ERC20 token paired with ETH.
@@ -64,6 +68,10 @@ contract UniswapV1Exchange is ERC20 {
     error UniswapV1Exchange__EthBoughtExceedsMinEth();
     error UniswapV1Exchange__EthBoughtIsZero();
     error UniswapV1Exchange__TokensSoldExceedsMaxTokens();
+    error UniswapV1Exchange__InvalidExchangeAddress();
+    error UniswapV1Exchange__MinTokensBoughtIsZero();
+    error UniswapV1Exchange__MinEthBoughtIsZero();
+    error UniswapV1Exchange__InsufficientEthBought();
 
     /*//////////////////////////////////////////////////////////////////////
                                 STATE VARIABLES
@@ -103,6 +111,15 @@ contract UniswapV1Exchange is ERC20 {
     modifier validRecipient(address _recipient) {
         if (_recipient == address(0) || _recipient == address(this)) {
             revert UniswapV1Exchange__InvalidRecipient();
+        }
+        _;
+    }
+
+    /// @notice Validates that the exchange address is neither address(0) nor this exchange contract.
+    /// @param _exchangeAddress The exchange address to validate.
+    modifier validExchange(address _exchangeAddress) {
+        if (_exchangeAddress == address(0) || _exchangeAddress == address(this)) {
+            revert UniswapV1Exchange__InvalidExchangeAddress();
         }
         _;
     }
@@ -328,6 +345,29 @@ contract UniswapV1Exchange is ERC20 {
         return _tokenToEthOutput(_ethBought, _maxTokens, _deadline, msg.sender, msg.sender);
     }
 
+    /**
+     * @notice Swaps an exact amount of this exchange token for another ERC20 token and transfers them to msg.sender.
+     * @dev Routes swap through ETH: Token A -> ETH -> Token B.
+     * @param _tokensSold Exact amount of input tokens being sold.
+     * @param _minTokensBought Minimum amount of output tokens caller expects to receive (slippage protection).
+     * @param _minEthBought Minimum amount of intermediate ETH that must be bought (slippage protection).
+     * @param _deadline Timestamp after which transaction reverts.
+     * @param _tokenAddress Address of the ERC20 token being purchased.
+     * @return tokensBought The amount of output tokens bought and transferred to msg.sender.
+     */
+    function tokenToTokenSwapInput(
+        uint256 _tokensSold,
+        uint256 _minTokensBought,
+        uint256 _minEthBought,
+        uint256 _deadline,
+        address _tokenAddress
+    ) external returns (uint256 tokensBought) {
+        address exchangeAddress = IUniswapV1Factory(I_FACTORY).getExchangeAddr(_tokenAddress);
+        return _tokenToTokenInput(
+            _tokensSold, _minTokensBought, _minEthBought, _deadline, msg.sender, msg.sender, payable(exchangeAddress)
+        );
+    }
+
     /*//////////////////////////////////////////////////////////////////////
                                 PUBLIC FUNCTIONS
     //////////////////////////////////////////////////////////////////////*/
@@ -394,6 +434,31 @@ contract UniswapV1Exchange is ERC20 {
         returns (uint256 tokensSold)
     {
         return _tokenToEthOutput(_ethBought, _maxTokens, _deadline, msg.sender, _recipient);
+    }
+
+    /**
+     * @notice Swaps an exact amount of this exchange token for another ERC20 token and transfers them to a specified recipient.
+     * @dev Routes swap through ETH: Token A -> ETH -> Token B.
+     * @param _tokensSold Exact amount of input tokens being sold.
+     * @param _minTokensBought Minimum amount of output tokens recipient must receive (slippage protection).
+     * @param _minEthBought Minimum amount of intermediate ETH that must be bought (slippage protection).
+     * @param _deadline Timestamp after which transaction reverts.
+     * @param _recipient The address receiving the purchased tokens.
+     * @param _tokenAddress Address of the ERC20 token being purchased.
+     * @return tokensBought The amount of output tokens bought and transferred to recipient.
+     */
+    function tokenToTokenTransferInput(
+        uint256 _tokensSold,
+        uint256 _minTokensBought,
+        uint256 _minEthBought,
+        uint256 _deadline,
+        address _recipient,
+        address _tokenAddress
+    ) external validRecipient(_recipient) returns (uint256 tokensBought) {
+        address exchangeAddress = IUniswapV1Factory(I_FACTORY).getExchangeAddr(_tokenAddress);
+        return _tokenToTokenInput(
+            _tokensSold, _minTokensBought, _minEthBought, _deadline, msg.sender, _recipient, payable(exchangeAddress)
+        );
     }
 
     /*//////////////////////////////////////////////////////////////////////
@@ -592,6 +657,59 @@ contract UniswapV1Exchange is ERC20 {
         emit EthPurchase(_buyer, tokensSold, _ethBought);
 
         return tokensSold;
+    }
+
+    /**
+     * @notice Swaps this exchange token for another ERC20 token routed through ETH.
+     * @dev Swaps Token A for intermediate ETH, then calls `ethToTokenTransferInput` on the target exchange.
+     * @param _tokensSold Amount of input tokens sold.
+     * @param _minTokensBought Minimum amount of output tokens recipient must receive.
+     * @param _minEthBought Minimum amount of intermediate ETH that must be bought.
+     * @param _deadline Timestamp after which transaction reverts.
+     * @param _buyer Address providing the input tokens.
+     * @param _recipient Address receiving the purchased output tokens.
+     * @param _exchangeAddress Address of the target exchange contract.
+     * @return tokensBought Amount of output tokens bought and sent to recipient.
+     */
+    function _tokenToTokenInput(
+        uint256 _tokensSold,
+        uint256 _minTokensBought,
+        uint256 _minEthBought,
+        uint256 _deadline,
+        address _buyer,
+        address _recipient,
+        address payable _exchangeAddress
+    ) private deadlineNotExpired(_deadline) validExchange(_exchangeAddress) returns (uint256 tokensBought) {
+        if (_tokensSold == 0) {
+            revert UniswapV1Exchange__TokensSoldIsZero();
+        }
+
+        if (_minTokensBought == 0) {
+            revert UniswapV1Exchange__MinTokensBoughtIsZero();
+        }
+
+        if (_minEthBought == 0) {
+            revert UniswapV1Exchange__MinEthBoughtIsZero();
+        }
+
+        uint256 ethBought = _getInputPrice(_tokensSold, I_TOKEN.balanceOf(address(this)), address(this).balance);
+
+        if (_minEthBought > ethBought) {
+            revert UniswapV1Exchange__InsufficientEthBought();
+        }
+
+        bool tokensSoldSuccess = I_TOKEN.transferFrom(_buyer, address(this), _tokensSold);
+        if (!tokensSoldSuccess) {
+            revert UniswapV1Exchange__TokensTransferFailed(_buyer, address(this), _tokensSold);
+        }
+
+        tokensBought = UniswapV1Exchange(_exchangeAddress).ethToTokenTransferInput{value: ethBought}(
+            _minTokensBought, _deadline, _recipient
+        );
+
+        emit EthPurchase(_buyer, _tokensSold, ethBought);
+
+        return tokensBought;
     }
 
     /*//////////////////////////////////////////////////////////////////////
