@@ -393,6 +393,50 @@ contract UniswapV1Exchange is ERC20 {
         );
     }
 
+    /**
+     * @notice Swaps an exact amount of this exchange token for another token via direct exchange address.
+     * @dev Routes swap through ETH: Token A -> ETH -> Token B using the provided exchange address directly.
+     * @param _tokensSold Exact amount of input tokens being sold.
+     * @param _minTokensBought Minimum amount of output tokens caller expects to receive (slippage protection).
+     * @param _minEthBought Minimum amount of intermediate ETH that must be bought (slippage protection).
+     * @param _deadline Timestamp after which transaction reverts.
+     * @param _exchangeAddress Address of the destination exchange contract.
+     * @return tokensBought The amount of output tokens bought and transferred to msg.sender.
+     */
+    function tokenToExchangeSwapInput(
+        uint256 _tokensSold,
+        uint256 _minTokensBought,
+        uint256 _minEthBought,
+        uint256 _deadline,
+        address payable _exchangeAddress
+    ) external returns (uint256 tokensBought) {
+        return _tokenToTokenInput(
+            _tokensSold, _minTokensBought, _minEthBought, _deadline, msg.sender, msg.sender, _exchangeAddress
+        );
+    }
+
+    /**
+     * @notice Swaps tokens for an exact amount of another token via direct exchange address.
+     * @dev Routes swap through ETH: Token A -> ETH -> Token B using the provided exchange address directly.
+     * @param _tokensBought Exact amount of output tokens caller wants to purchase.
+     * @param _maxTokensSold Maximum amount of input tokens caller is willing to sell (slippage protection).
+     * @param _maxEthSold Maximum amount of intermediate ETH allowed for the purchase (slippage protection).
+     * @param _deadline Timestamp after which transaction reverts.
+     * @param _exchangeAddress Address of the destination exchange contract.
+     * @return tokensSold The amount of input tokens sold by msg.sender.
+     */
+    function tokenToExchangeSwapOutput(
+        uint256 _tokensBought,
+        uint256 _maxTokensSold,
+        uint256 _maxEthSold,
+        uint256 _deadline,
+        address payable _exchangeAddress
+    ) external returns (uint256 tokensSold) {
+        return _tokenToTokenOutput(
+            _tokensBought, _maxTokensSold, _maxEthSold, _deadline, msg.sender, msg.sender, _exchangeAddress
+        );
+    }
+
     /*//////////////////////////////////////////////////////////////////////
                                 PUBLIC FUNCTIONS
     //////////////////////////////////////////////////////////////////////*/
@@ -508,6 +552,54 @@ contract UniswapV1Exchange is ERC20 {
         address exchangeAddress = IUniswapV1Factory(I_FACTORY).getExchangeAddr(_tokenAddress);
         return _tokenToTokenOutput(
             _tokensBought, _maxTokensSold, _maxEthSold, _deadline, msg.sender, _recipient, payable(exchangeAddress)
+        );
+    }
+
+    /**
+     * @notice Swaps an exact amount of this exchange token for another token and sends them to a recipient via direct exchange address.
+     * @dev Routes swap through ETH: Token A -> ETH -> Token B using the provided exchange address directly.
+     * @param _tokensSold Exact amount of input tokens being sold.
+     * @param _minTokensBought Minimum amount of output tokens recipient must receive (slippage protection).
+     * @param _minEthBought Minimum amount of intermediate ETH that must be bought (slippage protection).
+     * @param _deadline Timestamp after which transaction reverts.
+     * @param _recipient The address receiving the purchased tokens.
+     * @param _exchangeAddress Address of the destination exchange contract.
+     * @return tokensBought The amount of output tokens bought and transferred to recipient.
+     */
+    function tokenToExchangeTransferInput(
+        uint256 _tokensSold,
+        uint256 _minTokensBought,
+        uint256 _minEthBought,
+        uint256 _deadline,
+        address _recipient,
+        address payable _exchangeAddress
+    ) public validRecipient(_recipient) returns (uint256 tokensBought) {
+        return _tokenToTokenInput(
+            _tokensSold, _minTokensBought, _minEthBought, _deadline, msg.sender, _recipient, _exchangeAddress
+        );
+    }
+
+    /**
+     * @notice Swaps tokens for an exact amount of another token and sends them to a recipient via direct exchange address.
+     * @dev Routes swap through ETH: Token A -> ETH -> Token B using the provided exchange address directly.
+     * @param _tokensBought Exact amount of output tokens recipient will receive.
+     * @param _maxTokensSold Maximum amount of input tokens caller is willing to sell (slippage protection).
+     * @param _maxEthSold Maximum amount of intermediate ETH allowed for the purchase (slippage protection).
+     * @param _deadline Timestamp after which transaction reverts.
+     * @param _recipient The address receiving the purchased tokens.
+     * @param _exchangeAddress Address of the destination exchange contract.
+     * @return tokensSold The amount of input tokens sold by msg.sender.
+     */
+    function tokenToExchangeTransferOutput(
+        uint256 _tokensBought,
+        uint256 _maxTokensSold,
+        uint256 _maxEthSold,
+        uint256 _deadline,
+        address _recipient,
+        address payable _exchangeAddress
+    ) public validRecipient(_recipient) returns (uint256 tokensSold) {
+        return _tokenToTokenOutput(
+            _tokensBought, _maxTokensSold, _maxEthSold, _deadline, msg.sender, _recipient, _exchangeAddress
         );
     }
 
