@@ -72,6 +72,8 @@ contract UniswapV1Exchange is ERC20 {
     error UniswapV1Exchange__MinTokensBoughtIsZero();
     error UniswapV1Exchange__MinEthBoughtIsZero();
     error UniswapV1Exchange__InsufficientEthBought();
+    error UniswapV1Exchange__EthBoughtExceedsMaxEthSold();
+    error UniswapV1Exchange__TokensSoldExceedsMaxTokensSold();
 
     /*//////////////////////////////////////////////////////////////////////
                                 STATE VARIABLES
@@ -368,6 +370,29 @@ contract UniswapV1Exchange is ERC20 {
         );
     }
 
+    /**
+     * @notice Swaps tokens for an exact amount of another ERC20 token and transfers them to msg.sender.
+     * @dev Routes swap through ETH: Token A -> ETH -> Token B.
+     * @param _tokensBought Exact amount of output tokens caller wants to purchase.
+     * @param _maxTokensSold Maximum amount of input tokens caller is willing to sell (slippage protection).
+     * @param _maxEthSold Maximum amount of intermediate ETH allowed for the purchase (slippage protection).
+     * @param _deadline Timestamp after which transaction reverts.
+     * @param _tokenAddress Address of the ERC20 token being purchased.
+     * @return tokensSold The amount of input tokens sold by msg.sender.
+     */
+    function tokenToTokenSwapOutput(
+        uint256 _tokensBought,
+        uint256 _maxTokensSold,
+        uint256 _maxEthSold,
+        uint256 _deadline,
+        address _tokenAddress
+    ) external returns (uint256 tokensSold) {
+        address exchangeAddress = IUniswapV1Factory(I_FACTORY).getExchangeAddr(_tokenAddress);
+        return _tokenToTokenOutput(
+            _tokensBought, _maxTokensSold, _maxEthSold, _deadline, msg.sender, msg.sender, payable(exchangeAddress)
+        );
+    }
+
     /*//////////////////////////////////////////////////////////////////////
                                 PUBLIC FUNCTIONS
     //////////////////////////////////////////////////////////////////////*/
@@ -458,6 +483,31 @@ contract UniswapV1Exchange is ERC20 {
         address exchangeAddress = IUniswapV1Factory(I_FACTORY).getExchangeAddr(_tokenAddress);
         return _tokenToTokenInput(
             _tokensSold, _minTokensBought, _minEthBought, _deadline, msg.sender, _recipient, payable(exchangeAddress)
+        );
+    }
+
+    /**
+     * @notice Swaps tokens for an exact amount of another ERC20 token and transfers them to a specified recipient.
+     * @dev Routes swap through ETH: Token A -> ETH -> Token B.
+     * @param _tokensBought Exact amount of output tokens recipient will receive.
+     * @param _maxTokensSold Maximum amount of input tokens caller is willing to sell (slippage protection).
+     * @param _maxEthSold Maximum amount of intermediate ETH allowed for the purchase (slippage protection).
+     * @param _deadline Timestamp after which transaction reverts.
+     * @param _recipient The address receiving the purchased tokens.
+     * @param _tokenAddress Address of the ERC20 token being purchased.
+     * @return tokensSold The amount of input tokens sold by msg.sender.
+     */
+    function tokenToTokenTransferOutput(
+        uint256 _tokensBought,
+        uint256 _maxTokensSold,
+        uint256 _maxEthSold,
+        uint256 _deadline,
+        address _recipient,
+        address _tokenAddress
+    ) public validRecipient(_recipient) returns (uint256 tokensSold) {
+        address exchangeAddress = IUniswapV1Factory(I_FACTORY).getExchangeAddr(_tokenAddress);
+        return _tokenToTokenOutput(
+            _tokensBought, _maxTokensSold, _maxEthSold, _deadline, msg.sender, _recipient, payable(exchangeAddress)
         );
     }
 
@@ -710,6 +760,62 @@ contract UniswapV1Exchange is ERC20 {
         emit EthPurchase(_buyer, _tokensSold, ethBought);
 
         return tokensBought;
+    }
+
+    /**
+     * @notice Swaps this exchange token for an exact amount of another ERC20 token routed through ETH.
+     * @dev Buys exact Token B by routing through ETH: calculates intermediate ETH needed, sells Token A for ETH,
+     *      and calls `ethToTokenTransferOutput` on the target exchange.
+     * @param _tokensBought Exact amount of output tokens recipient will receive.
+     * @param _maxTokensSold Maximum amount of input tokens buyer is willing to sell (slippage protection).
+     * @param _maxEthSold Maximum amount of intermediate ETH allowed for the purchase (slippage protection).
+     * @param _deadline Timestamp after which transaction reverts.
+     * @param _buyer Address providing the input tokens.
+     * @param _recipient Address receiving the purchased output tokens.
+     * @param _exchangeAddress Address of the target exchange contract.
+     * @return tokensSold Amount of input tokens sold by the buyer.
+     */
+    function _tokenToTokenOutput(
+        uint256 _tokensBought,
+        uint256 _maxTokensSold,
+        uint256 _maxEthSold,
+        uint256 _deadline,
+        address _buyer,
+        address _recipient,
+        address payable _exchangeAddress
+    ) private deadlineNotExpired(_deadline) validExchange(_exchangeAddress) returns (uint256 tokensSold) {
+        if (_tokensBought == 0) {
+            revert UniswapV1Exchange__TokensBoughtIsZero();
+        }
+
+        if (_maxEthSold == 0) {
+            revert UniswapV1Exchange__MaxEthIsZero();
+        }
+
+        uint256 ethBought = UniswapV1Exchange(_exchangeAddress).getEthToTokenOutputPrice(_tokensBought);
+
+        if (ethBought > _maxEthSold) {
+            revert UniswapV1Exchange__EthBoughtExceedsMaxEthSold();
+        }
+
+        tokensSold = _getOutputPrice(ethBought, I_TOKEN.balanceOf(address(this)), address(this).balance);
+
+        if (_maxTokensSold < tokensSold) {
+            revert UniswapV1Exchange__TokensSoldExceedsMaxTokensSold();
+        }
+
+        bool tokensTransferSuccess = I_TOKEN.transferFrom(_buyer, address(this), tokensSold);
+        if (!tokensTransferSuccess) {
+            revert UniswapV1Exchange__TokensTransferFailed(_buyer, address(this), tokensSold);
+        }
+
+        UniswapV1Exchange(_exchangeAddress).ethToTokenTransferOutput{value: ethBought}(
+            _tokensBought, _deadline, _recipient
+        );
+
+        emit EthPurchase(_buyer, tokensSold, ethBought);
+
+        return tokensSold;
     }
 
     /*//////////////////////////////////////////////////////////////////////
