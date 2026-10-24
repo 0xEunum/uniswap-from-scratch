@@ -313,4 +313,337 @@ contract TokenToTokenSwapUnitTest is Test {
         exchangeA.tokenToTokenTransferInput(tokensSold, 1, 1, block.timestamp, USER2, address(tokenB));
         vm.stopPrank();
     }
+
+    // tokenToTokenSwapOutput
+
+    function test_TokenToTokenSwapOutput() public withTokenToTokenLiquidity {
+        uint256 tokenAReserve = 1_000 ether;
+        uint256 tokenBReserve = 1_000 ether;
+        uint256 ethReserveA = 10 ether;
+        uint256 ethReserveB = 10 ether;
+
+        uint256 tokensBought = 100 ether;
+
+        uint256 ethBought = exchangeB.getEthToTokenOutputPrice(tokensBought);
+        uint256 tokensSold = exchangeA.getTokenToEthOutputPrice(ethBought);
+
+        deal(address(tokenA), USER, tokensSold);
+
+        vm.startPrank(USER);
+        tokenA.approve(address(exchangeA), tokensSold);
+
+        uint256 actualTokensSold =
+            exchangeA.tokenToTokenSwapOutput(tokensBought, tokensSold, ethBought, block.timestamp, address(tokenB));
+        vm.stopPrank();
+
+        assertEq(actualTokensSold, tokensSold);
+        assertEq(tokenA.balanceOf(USER), 0);
+        assertEq(tokenB.balanceOf(USER), tokensBought);
+
+        assertEq(tokenA.balanceOf(address(exchangeA)), tokenAReserve + tokensSold);
+        assertEq(address(exchangeA).balance, ethReserveA - ethBought);
+
+        assertEq(address(exchangeB).balance, ethReserveB + ethBought);
+        assertEq(tokenB.balanceOf(address(exchangeB)), tokenBReserve - tokensBought);
+    }
+
+    function test_TokenToTokenSwapOutputEmitsEvent() public withTokenToTokenLiquidity {
+        uint256 tokensBought = 100 ether;
+        uint256 ethBought = exchangeB.getEthToTokenOutputPrice(tokensBought);
+        uint256 tokensSold = exchangeA.getTokenToEthOutputPrice(ethBought);
+
+        deal(address(tokenA), USER, tokensSold);
+
+        vm.startPrank(USER);
+        tokenA.approve(address(exchangeA), tokensSold);
+
+        vm.expectEmit(true, false, false, true, address(exchangeA));
+        emit UniswapV1Exchange.EthPurchase(USER, tokensSold, ethBought);
+
+        exchangeA.tokenToTokenSwapOutput(tokensBought, tokensSold, ethBought, block.timestamp, address(tokenB));
+        vm.stopPrank();
+    }
+
+    function test_TokenToTokenSwapOutputRevertsWhenTokensBoughtIsZero() public withTokenToTokenLiquidity {
+        vm.expectRevert(UniswapV1Exchange.UniswapV1Exchange__TokensBoughtIsZero.selector);
+        exchangeA.tokenToTokenSwapOutput(0, 1, 1, block.timestamp, address(tokenB));
+    }
+
+    function test_TokenToTokenSwapOutputRevertsWhenMaxEthSoldIsZero() public withTokenToTokenLiquidity {
+        vm.expectRevert(UniswapV1Exchange.UniswapV1Exchange__MaxEthIsZero.selector);
+        exchangeA.tokenToTokenSwapOutput(100 ether, 1_000 ether, 0, block.timestamp, address(tokenB));
+    }
+
+    function test_TokenToTokenSwapOutputRevertsWhenDeadlinePassed() public withTokenToTokenLiquidity {
+        vm.expectRevert(UniswapV1Exchange.UniswapV1Exchange__DeadlineExpired.selector);
+        exchangeA.tokenToTokenSwapOutput(100 ether, 1_000 ether, 1 ether, block.timestamp - 1, address(tokenB));
+    }
+
+    function test_TokenToTokenSwapOutputRevertsWhenEthBoughtExceedsMaxEthSold() public withTokenToTokenLiquidity {
+        uint256 tokensBought = 100 ether;
+        uint256 ethBought = exchangeB.getEthToTokenOutputPrice(tokensBought);
+
+        vm.expectRevert(UniswapV1Exchange.UniswapV1Exchange__EthBoughtExceedsMaxEthSold.selector);
+        exchangeA.tokenToTokenSwapOutput(
+            tokensBought, type(uint256).max, ethBought - 1, block.timestamp, address(tokenB)
+        );
+    }
+
+    function test_TokenToTokenSwapOutputRevertsWhenTokensSoldExceedsMaxTokensSold() public withTokenToTokenLiquidity {
+        uint256 tokensBought = 100 ether;
+        uint256 ethBought = exchangeB.getEthToTokenOutputPrice(tokensBought);
+        uint256 tokensSold = exchangeA.getTokenToEthOutputPrice(ethBought);
+
+        deal(address(tokenA), USER, tokensSold);
+
+        vm.startPrank(USER);
+        tokenA.approve(address(exchangeA), tokensSold);
+
+        vm.expectRevert(UniswapV1Exchange.UniswapV1Exchange__TokensSoldExceedsMaxTokensSold.selector);
+        exchangeA.tokenToTokenSwapOutput(tokensBought, tokensSold - 1, ethBought, block.timestamp, address(tokenB));
+        vm.stopPrank();
+    }
+
+    function test_TokenToTokenSwapOutputRevertsWhenOutputTokenHasNoExchange() public withTokenToTokenLiquidity {
+        ERC20Mock tokenC = new ERC20Mock();
+        vm.expectRevert(UniswapV1Exchange.UniswapV1Exchange__InvalidExchangeAddress.selector);
+        exchangeA.tokenToTokenSwapOutput(100 ether, 1_000 ether, 1 ether, block.timestamp, address(tokenC));
+    }
+
+    function test_TokenToTokenSwapOutputRevertsWhenOutputTokenIsSameToken() public withTokenToTokenLiquidity {
+        vm.expectRevert(UniswapV1Exchange.UniswapV1Exchange__InvalidExchangeAddress.selector);
+        exchangeA.tokenToTokenSwapOutput(100 ether, 1_000 ether, 1 ether, block.timestamp, address(tokenA));
+    }
+
+    function test_TokenToTokenSwapOutputRevertsWhenTokenTransferFails() public withTokenToTokenLiquidity {
+        uint256 tokensBought = 100 ether;
+        uint256 ethBought = exchangeB.getEthToTokenOutputPrice(tokensBought);
+        uint256 tokensSold = exchangeA.getTokenToEthOutputPrice(ethBought);
+
+        deal(address(tokenA), USER, tokensSold);
+
+        vm.startPrank(USER);
+        tokenA.approve(address(exchangeA), tokensSold);
+
+        vm.mockCall(
+            address(tokenA),
+            abi.encodeWithSelector(tokenA.transferFrom.selector, USER, address(exchangeA), tokensSold),
+            abi.encode(false)
+        );
+
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                UniswapV1Exchange.UniswapV1Exchange__TokensTransferFailed.selector, USER, address(exchangeA), tokensSold
+            )
+        );
+        exchangeA.tokenToTokenSwapOutput(tokensBought, tokensSold, ethBought, block.timestamp, address(tokenB));
+        vm.stopPrank();
+    }
+
+    // tokenToTokenTransferOutput
+
+    function test_TokenToTokenTransferOutput() public withTokenToTokenLiquidity {
+        uint256 tokenAReserve = 1_000 ether;
+        uint256 tokenBReserve = 1_000 ether;
+        uint256 ethReserveA = 10 ether;
+        uint256 ethReserveB = 10 ether;
+
+        uint256 tokensBought = 100 ether;
+
+        uint256 ethBought = exchangeB.getEthToTokenOutputPrice(tokensBought);
+        uint256 tokensSold = exchangeA.getTokenToEthOutputPrice(ethBought);
+
+        deal(address(tokenA), USER, tokensSold);
+
+        vm.startPrank(USER);
+        tokenA.approve(address(exchangeA), tokensSold);
+
+        uint256 actualTokensSold = exchangeA.tokenToTokenTransferOutput(
+            tokensBought, tokensSold, ethBought, block.timestamp, USER2, address(tokenB)
+        );
+        vm.stopPrank();
+
+        assertEq(actualTokensSold, tokensSold);
+        assertEq(tokenA.balanceOf(USER), 0);
+        assertEq(tokenB.balanceOf(USER), 0);
+        assertEq(tokenB.balanceOf(USER2), tokensBought);
+
+        assertEq(tokenA.balanceOf(address(exchangeA)), tokenAReserve + tokensSold);
+        assertEq(address(exchangeA).balance, ethReserveA - ethBought);
+
+        assertEq(address(exchangeB).balance, ethReserveB + ethBought);
+        assertEq(tokenB.balanceOf(address(exchangeB)), tokenBReserve - tokensBought);
+    }
+
+    function test_TokenToTokenTransferOutputEmitsEvent() public withTokenToTokenLiquidity {
+        uint256 tokensBought = 100 ether;
+        uint256 ethBought = exchangeB.getEthToTokenOutputPrice(tokensBought);
+        uint256 tokensSold = exchangeA.getTokenToEthOutputPrice(ethBought);
+
+        deal(address(tokenA), USER, tokensSold);
+
+        vm.startPrank(USER);
+        tokenA.approve(address(exchangeA), tokensSold);
+
+        vm.expectEmit(true, false, false, true, address(exchangeA));
+        emit UniswapV1Exchange.EthPurchase(USER, tokensSold, ethBought);
+
+        exchangeA.tokenToTokenTransferOutput(
+            tokensBought, tokensSold, ethBought, block.timestamp, USER2, address(tokenB)
+        );
+        vm.stopPrank();
+    }
+
+    function test_TokenToTokenTransferOutputRevertsWhenRecipientIsZeroAddress() public withTokenToTokenLiquidity {
+        vm.expectRevert(UniswapV1Exchange.UniswapV1Exchange__InvalidRecipient.selector);
+        exchangeA.tokenToTokenTransferOutput(
+            100 ether, 1_000 ether, 1 ether, block.timestamp, address(0), address(tokenB)
+        );
+    }
+
+    function test_TokenToTokenTransferOutputRevertsWhenRecipientIsExchange() public withTokenToTokenLiquidity {
+        vm.expectRevert(UniswapV1Exchange.UniswapV1Exchange__InvalidRecipient.selector);
+        exchangeA.tokenToTokenTransferOutput(
+            100 ether, 1_000 ether, 1 ether, block.timestamp, address(exchangeA), address(tokenB)
+        );
+    }
+
+    // tokenToExchangeSwapInput
+
+    function test_TokenToExchangeSwapInput() public withTokenToTokenLiquidity {
+        uint256 tokensSold = 100 ether;
+        deal(address(tokenA), USER, tokensSold);
+
+        uint256 ethBought = exchangeA.getTokenToEthInputPrice(tokensSold);
+        uint256 tokensBought = exchangeB.getEthToTokenInputPrice(ethBought);
+
+        vm.startPrank(USER);
+        tokenA.approve(address(exchangeA), tokensSold);
+
+        uint256 actualTokensBought =
+            exchangeA.tokenToExchangeSwapInput(tokensSold, 1, 1, block.timestamp, payable(address(exchangeB)));
+        vm.stopPrank();
+
+        assertEq(actualTokensBought, tokensBought);
+        assertEq(tokenA.balanceOf(USER), 0);
+        assertEq(tokenB.balanceOf(USER), tokensBought);
+    }
+
+    function test_TokenToExchangeSwapInputRevertsWhenExchangeIsZeroAddress() public withTokenToTokenLiquidity {
+        vm.expectRevert(UniswapV1Exchange.UniswapV1Exchange__InvalidExchangeAddress.selector);
+        exchangeA.tokenToExchangeSwapInput(100 ether, 1, 1, block.timestamp, payable(address(0)));
+    }
+
+    function test_TokenToExchangeSwapInputRevertsWhenExchangeIsThisAddress() public withTokenToTokenLiquidity {
+        vm.expectRevert(UniswapV1Exchange.UniswapV1Exchange__InvalidExchangeAddress.selector);
+        exchangeA.tokenToExchangeSwapInput(100 ether, 1, 1, block.timestamp, payable(address(exchangeA)));
+    }
+
+    // tokenToExchangeTransferInput
+
+    function test_TokenToExchangeTransferInput() public withTokenToTokenLiquidity {
+        uint256 tokensSold = 100 ether;
+        deal(address(tokenA), USER, tokensSold);
+
+        uint256 ethBought = exchangeA.getTokenToEthInputPrice(tokensSold);
+        uint256 tokensBought = exchangeB.getEthToTokenInputPrice(ethBought);
+
+        vm.startPrank(USER);
+        tokenA.approve(address(exchangeA), tokensSold);
+
+        uint256 actualTokensBought = exchangeA.tokenToExchangeTransferInput(
+            tokensSold, 1, 1, block.timestamp, USER2, payable(address(exchangeB))
+        );
+        vm.stopPrank();
+
+        assertEq(actualTokensBought, tokensBought);
+        assertEq(tokenA.balanceOf(USER), 0);
+        assertEq(tokenB.balanceOf(USER), 0);
+        assertEq(tokenB.balanceOf(USER2), tokensBought);
+    }
+
+    function test_TokenToExchangeTransferInputRevertsWhenRecipientIsZeroAddress() public withTokenToTokenLiquidity {
+        vm.expectRevert(UniswapV1Exchange.UniswapV1Exchange__InvalidRecipient.selector);
+        exchangeA.tokenToExchangeTransferInput(
+            100 ether, 1, 1, block.timestamp, address(0), payable(address(exchangeB))
+        );
+    }
+
+    function test_TokenToExchangeTransferInputRevertsWhenRecipientIsExchange() public withTokenToTokenLiquidity {
+        vm.expectRevert(UniswapV1Exchange.UniswapV1Exchange__InvalidRecipient.selector);
+        exchangeA.tokenToExchangeTransferInput(
+            100 ether, 1, 1, block.timestamp, address(exchangeA), payable(address(exchangeB))
+        );
+    }
+
+    // tokenToExchangeSwapOutput
+
+    function test_TokenToExchangeSwapOutput() public withTokenToTokenLiquidity {
+        uint256 tokensBought = 100 ether;
+        uint256 ethBought = exchangeB.getEthToTokenOutputPrice(tokensBought);
+        uint256 tokensSold = exchangeA.getTokenToEthOutputPrice(ethBought);
+
+        deal(address(tokenA), USER, tokensSold);
+
+        vm.startPrank(USER);
+        tokenA.approve(address(exchangeA), tokensSold);
+
+        uint256 actualTokensSold = exchangeA.tokenToExchangeSwapOutput(
+            tokensBought, tokensSold, ethBought, block.timestamp, payable(address(exchangeB))
+        );
+        vm.stopPrank();
+
+        assertEq(actualTokensSold, tokensSold);
+        assertEq(tokenA.balanceOf(USER), 0);
+        assertEq(tokenB.balanceOf(USER), tokensBought);
+    }
+
+    function test_TokenToExchangeSwapOutputRevertsWhenExchangeIsZeroAddress() public withTokenToTokenLiquidity {
+        vm.expectRevert(UniswapV1Exchange.UniswapV1Exchange__InvalidExchangeAddress.selector);
+        exchangeA.tokenToExchangeSwapOutput(100 ether, 1_000 ether, 1 ether, block.timestamp, payable(address(0)));
+    }
+
+    function test_TokenToExchangeSwapOutputRevertsWhenExchangeIsThisAddress() public withTokenToTokenLiquidity {
+        vm.expectRevert(UniswapV1Exchange.UniswapV1Exchange__InvalidExchangeAddress.selector);
+        exchangeA.tokenToExchangeSwapOutput(
+            100 ether, 1_000 ether, 1 ether, block.timestamp, payable(address(exchangeA))
+        );
+    }
+
+    // tokenToExchangeTransferOutput
+
+    function test_TokenToExchangeTransferOutput() public withTokenToTokenLiquidity {
+        uint256 tokensBought = 100 ether;
+        uint256 ethBought = exchangeB.getEthToTokenOutputPrice(tokensBought);
+        uint256 tokensSold = exchangeA.getTokenToEthOutputPrice(ethBought);
+
+        deal(address(tokenA), USER, tokensSold);
+
+        vm.startPrank(USER);
+        tokenA.approve(address(exchangeA), tokensSold);
+
+        uint256 actualTokensSold = exchangeA.tokenToExchangeTransferOutput(
+            tokensBought, tokensSold, ethBought, block.timestamp, USER2, payable(address(exchangeB))
+        );
+        vm.stopPrank();
+
+        assertEq(actualTokensSold, tokensSold);
+        assertEq(tokenA.balanceOf(USER), 0);
+        assertEq(tokenB.balanceOf(USER), 0);
+        assertEq(tokenB.balanceOf(USER2), tokensBought);
+    }
+
+    function test_TokenToExchangeTransferOutputRevertsWhenRecipientIsZeroAddress() public withTokenToTokenLiquidity {
+        vm.expectRevert(UniswapV1Exchange.UniswapV1Exchange__InvalidRecipient.selector);
+        exchangeA.tokenToExchangeTransferOutput(
+            100 ether, 1_000 ether, 1 ether, block.timestamp, address(0), payable(address(exchangeB))
+        );
+    }
+
+    function test_TokenToExchangeTransferOutputRevertsWhenRecipientIsExchange() public withTokenToTokenLiquidity {
+        vm.expectRevert(UniswapV1Exchange.UniswapV1Exchange__InvalidRecipient.selector);
+        exchangeA.tokenToExchangeTransferOutput(
+            100 ether, 1_000 ether, 1 ether, block.timestamp, address(exchangeA), payable(address(exchangeB))
+        );
+    }
 }
