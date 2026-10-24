@@ -2,8 +2,11 @@
 src = "src"
 out = "out"
 libs = ["lib"]
+via_ir = true
 
 remappings = ["@openzeppelin/contracts/=lib/openzeppelin-contracts/contracts/"]
+
+no_match_coverage = "(test|mock)"
 
 [rpc_endpoints]
 anvil = "http://127.0.0.1:8545"
