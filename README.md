@@ -1,66 +1,70 @@
-## Foundry
+# Uniswap From Scratch
 
-**Foundry is a blazing fast, portable and modular toolkit for Ethereum application development written in Rust.**
+Rebuilding Uniswap V1, V2, and V3 in Solidity from scratch using Foundry — one version at a time, as a deep-dive learning series. Each version lives in its own folder with its own README, tests, and documentation. The goal is to understand how each version of the protocol actually works at the code level, not just from a high level.
 
-Foundry consists of:
+## Video Walkthrough
 
-- **Forge**: Ethereum testing framework (like Truffle, Hardhat and DappTools).
-- **Cast**: Swiss army knife for interacting with EVM smart contracts, sending transactions and getting chain data.
-- **Anvil**: Local Ethereum node, akin to Ganache, Hardhat Network.
-- **Chisel**: Fast, utilitarian, and verbose solidity REPL.
+Coming soon.
 
-## Documentation
+<!-- TODO: paste YouTube link here -->
 
-https://book.getfoundry.sh/
+---
 
-## Usage
+## Roadmap
 
-### Build
+| Version | Status | README |
+|---------|--------|--------|
+| V1 | ✅ Done | [src/v1/README.md](./src/v1/README.md) |
+| V2 | 🔜 Upcoming | — |
+| V3 | 🔜 Upcoming | — |
 
-```shell
-$ forge build
+---
+
+## Project Structure
+
+```
+uniswap-from-scratch/
+├── src/
+│   ├── v1/
+│   │   ├── UniswapV1Factory.sol
+│   │   ├── UniswapV1Exchange.sol
+│   │   └── README.md              # V1 deep-dive
+│   ├── v2/                        # upcoming
+│   └── v3/                        # upcoming
+├── test/
+│   ├── v1/
+│   │   └── unit/
+│   └── v2/                        # upcoming
+├── docs/
+│   ├── v1/                        # V1 detailed docs
+│   │   ├── ARCHITECTURE.md
+│   │   ├── MATH.md
+│   │   ├── LIQUIDITY.md
+│   │   ├── SWAPS.md
+│   │   └── TOKEN_TO_TOKEN.md
+│   └── README.md                  # docs index
+├── foundry.toml
+└── README.md
 ```
 
-### Test
+---
 
-```shell
-$ forge test
+## Build & Test
+
+**Prerequisites:** [Foundry](https://book.getfoundry.sh/getting-started/installation)
+
+```bash
+# Install dependencies
+forge install
+
+# Compile
+forge build
+
+# Run all tests
+forge test
+
+# Coverage report
+forge coverage
 ```
 
-### Format
-
-```shell
-$ forge fmt
-```
-
-### Gas Snapshots
-
-```shell
-$ forge snapshot
-```
-
-### Anvil
-
-```shell
-$ anvil
-```
-
-### Deploy
-
-```shell
-$ forge script script/Counter.s.sol:CounterScript --rpc-url <your_rpc_url> --private-key <your_private_key>
-```
-
-### Cast
-
-```shell
-$ cast <subcommand>
-```
-
-### Help
-
-```shell
-$ forge --help
-$ anvil --help
-$ cast --help
-```
+Each version's README has version-specific test counts and coverage numbers.
