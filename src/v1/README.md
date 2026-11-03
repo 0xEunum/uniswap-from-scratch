@@ -4,6 +4,14 @@ A full reimplementation of the Uniswap V1 protocol in Solidity, built with Found
 
 For detailed documentation see [`docs/v1/`](../../docs/v1/README.md) (linked from the repo root).
 
+## Video Walkthrough
+
+Watch the comprehensive video walkthrough explaining Uniswap V1 architecture, math, and code implementation:
+
+[![Uniswap V1 Walkthrough](https://img.youtube.com/vi/GpsansnpjNM/maxresdefault.jpg)](https://youtu.be/GpsansnpjNM)
+
+▶️ [Watch on YouTube](https://youtu.be/GpsansnpjNM)
+
 ---
 
 ## How It Works

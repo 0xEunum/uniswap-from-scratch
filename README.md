@@ -4,9 +4,11 @@ Rebuilding Uniswap V1, V2, and V3 in Solidity from scratch using Foundry — one
 
 ## Video Walkthrough
 
-Coming soon.
+Watch the comprehensive video walkthrough explaining Uniswap V1 architecture, math, and code implementation:
 
-<!-- TODO: paste YouTube link here -->
+[![Uniswap V1 Walkthrough](https://img.youtube.com/vi/GpsansnpjNM/maxresdefault.jpg)](https://youtu.be/GpsansnpjNM)
+
+▶️ [Watch on YouTube](https://youtu.be/GpsansnpjNM)
 
 ---
 
