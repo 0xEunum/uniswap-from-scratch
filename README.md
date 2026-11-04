@@ -17,7 +17,7 @@ Watch the comprehensive video walkthrough explaining Uniswap V1 architecture, ma
 | Version | Status | README |
 |---------|--------|--------|
 | V1 | ✅ Done | [src/v1/README.md](./src/v1/README.md) |
-| V2 | 🔜 Upcoming | — |
+| V2 | 🚧 In Progress | [src/v2/README.md](./src/v2/README.md) |
 | V3 | 🔜 Upcoming | — |
 
 ---
