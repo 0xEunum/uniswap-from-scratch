@@ -10,5 +10,6 @@ no_match_coverage = "(test|mock)"
 
 [rpc_endpoints]
 anvil = "http://127.0.0.1:8545"
+mainnet = "${ETH_MAINNET_RPC_URL}"
 
 # See more config options https://github.com/foundry-rs/foundry/blob/master/crates/config/README.md#all-options
