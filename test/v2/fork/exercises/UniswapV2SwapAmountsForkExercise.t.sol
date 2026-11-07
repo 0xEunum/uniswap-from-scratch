@@ -1,8 +1,9 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.30;
 
-import {Test, console2} from "forge-std/Test.sol";
-import {UniswapV2RouterUnitTest} from "test/v2/unit/UniswapV2RouterUnitTest.t.sol";
+import {console2} from "forge-std/Console2.sol";
+
+import {UniswapV2TestSetUp} from "test/v2/UniswapV2TestSetUp.t.sol";
 
 interface IUniswapV2Router02 {
     function getAmountsOut(uint256 amountIn, address[] calldata path) external view returns (uint256[] memory amounts);
@@ -10,7 +11,7 @@ interface IUniswapV2Router02 {
 }
 
 /**
- * @title UniswapV2SwapAmountsForkTest
+ * @title UniswapV2SwapAmountsForkExercise
  * @notice Demonstrates live multi-hop swap pricing against real Ethereum Mainnet Uniswap V2 pairs.
  * @dev WARNING: This test file ONLY works on a Mainnet fork environment!
  *
@@ -18,19 +19,20 @@ interface IUniswapV2Router02 {
  * and the Uniswap V2 Router exist only on Ethereum Mainnet.
  *
  * Command to run:
- *   forge test --match-test test_GetAmountsOutFork --fork-url mainnet -vv
- *   forge test --match-test test_GetAmountsInFork --fork-url mainnet -vv
+ *   forge test --match-test <TEST_NAME> --fork-url mainnet -vv
+ *
+ *   forge test --match-path test/v2/fork/exercises/UniswapV2SwapAmountsForkExercise.t.sol --fork-url mainnet -vv
  */
-contract UniswapV2SwapAmountsForkTest is Test, UniswapV2RouterUnitTest {
+contract UniswapV2SwapAmountsForkExercise is UniswapV2TestSetUp {
     function setUp() public override {
         super.setUp();
     }
 
-    function test_GetAmountsOutFork() public view {
+    function test_GetAmountsOutForkExercise() public view {
         address[] memory path = new address[](3);
-        path[0] = WETH;
-        path[1] = DAI;
-        path[2] = MKR;
+        path[0] = address(WETH);
+        path[1] = address(DAI);
+        path[2] = address(MKR);
 
         uint256 amountIn = 1 ether;
         uint256[] memory amounts = IUniswapV2Router02(address(router)).getAmountsOut(amountIn, path);
@@ -91,11 +93,11 @@ contract UniswapV2SwapAmountsForkTest is Test, UniswapV2RouterUnitTest {
     //     }
     // }
 
-    function test_GetAmountsInFork() public view {
+    function test_GetAmountsInForkExercise() public view {
         address[] memory path = new address[](3);
-        path[0] = WETH;
-        path[1] = DAI;
-        path[2] = MKR;
+        path[0] = address(WETH);
+        path[1] = address(DAI);
+        path[2] = address(MKR);
 
         uint256 amountOut = 0.005 ether; // 0.005 MKR
 
